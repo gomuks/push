@@ -39,6 +39,7 @@ import (
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/util/requestlog"
 	"go.mau.fi/zeroconfig"
+	"google.golang.org/api/option"
 )
 
 var fcmPackageName = os.Getenv("FCM_PACKAGE_NAME")
@@ -81,7 +82,7 @@ func main() {
 		),
 	}
 	ctx := log.WithContext(context.Background())
-	app := exerrors.Must(firebase.NewApp(ctx, nil))
+	app := exerrors.Must(firebase.NewApp(ctx, nil, option.WithCredentialsFile(os.Getenv("FCM_CREDENTIALS_FILE"))))
 	fcmClient = exerrors.Must(app.Messaging(ctx))
 	go func() {
 		c := make(chan os.Signal, 1)
