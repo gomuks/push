@@ -71,8 +71,8 @@ func main() {
 	}).Compile())
 	exzerolog.SetupDefaults(log)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/_gomuks/push/fcm", handlePushProxy)
-	mux.HandleFunc("/{$}", handleIndex)
+	mux.HandleFunc("POST /_gomuks/push/fcm", handlePushProxy)
+	mux.HandleFunc("GET /{$}", handleIndex)
 	server := http.Server{
 		Addr: fmt.Sprintf("%s:%s", os.Getenv("HOST"), os.Getenv("PORT")),
 		Handler: exhttp.ApplyMiddleware(
