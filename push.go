@@ -78,7 +78,7 @@ func main() {
 		Handler: exhttp.ApplyMiddleware(
 			mux,
 			hlog.NewHandler(*log),
-			requestlog.AccessLogger(true),
+			requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		),
 	}
 	ctx := log.WithContext(context.Background())
@@ -109,6 +109,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
 type PushRequest struct {
 	Token        string `json:"token"`
+	Owner        string `json:"owner"`
 	Payload      []byte `json:"payload"`
 	HighPriority bool   `json:"high_priority"`
 }
@@ -150,6 +151,7 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 		hlog.FromRequest(r).
 			Err(err).
 			Str("push_token", req.Token).
+			Str("owner", req.Owner).
 			Msg("Failed to send FCM request")
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
@@ -157,6 +159,7 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Err(err).
 			Str("push_token", req.Token).
 			Str("message_id", resp).
+			Str("owner", req.Owner).
 			Msg("Sent FCM request")
 		w.WriteHeader(http.StatusOK)
 	}
