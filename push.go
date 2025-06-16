@@ -147,6 +147,8 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	} else if base64.StdEncoding.EncodedLen(len(req.Payload)) > maxPayloadLength {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
+	} else if len(req.Owner) == 0 || len(req.Owner) > 255 {
+		w.WriteHeader(http.StatusBadRequest)
 	} else if resp, err := fcmClient.Send(r.Context(), req.ToFCM()); err != nil {
 		hlog.FromRequest(r).
 			Err(err).
