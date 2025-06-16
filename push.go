@@ -153,7 +153,12 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Str("push_token", req.Token).
 			Str("owner", req.Owner).
 			Msg("Failed to send FCM request")
-		w.WriteHeader(http.StatusInternalServerError)
+		// TODO can errors be checked properly?
+		if err.Error() == "Requested entity was not found." || err.Error() == "SenderId mismatch" {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	} else {
 		hlog.FromRequest(r).
 			Err(err).
