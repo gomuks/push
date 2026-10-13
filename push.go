@@ -1,5 +1,5 @@
 // gomuks/push - An FCM push gateway for gomuks android.
-// Copyright (C) 2024 Tulir Asokan
+// Copyright (C) 2024-2026 Tulir Asokan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -17,6 +17,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -26,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -45,12 +47,6 @@ import (
 var fcmPackageName = os.Getenv("FCM_PACKAGE_NAME")
 var fcmClient *messaging.Client
 
-func init() {
-	if _, hasPort := os.LookupEnv("PORT"); !hasPort {
-		exerrors.PanicIfNotNil(os.Setenv("PORT", "8080"))
-	}
-}
-
 func main() {
 	log := exerrors.Must((&zeroconfig.Config{
 		Writers: []zeroconfig.WriterConfig{{
@@ -62,7 +58,7 @@ func main() {
 			Format: zeroconfig.LogFormatJSON,
 			FileConfig: zeroconfig.FileConfig{
 				Filename:   "/var/log/gomuks-push.log",
-				MaxSize:    100 * 1024,
+				MaxSize:    100,
 				MaxAge:     7,
 				MaxBackups: 10,
 			},
@@ -74,15 +70,18 @@ func main() {
 	mux.HandleFunc("POST /_gomuks/push/fcm", handlePushProxy)
 	mux.HandleFunc("GET /{$}", handleIndex)
 	server := http.Server{
-		Addr: fmt.Sprintf("%s:%s", os.Getenv("HOST"), os.Getenv("PORT")),
+		Addr: fmt.Sprintf("%s:%s", os.Getenv("HOST"), cmp.Or(os.Getenv("PORT"), "8080")),
 		Handler: exhttp.ApplyMiddleware(
 			mux,
 			hlog.NewHandler(*log),
 			requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		),
+		Protocols: &http.Protocols{},
 	}
+	server.Protocols.SetHTTP1(true)
+	server.Protocols.SetUnencryptedHTTP2(true)
 	ctx := log.WithContext(context.Background())
-	app := exerrors.Must(firebase.NewApp(ctx, nil, option.WithCredentialsFile(os.Getenv("FCM_CREDENTIALS_FILE"))))
+	app := exerrors.Must(firebase.NewApp(ctx, nil, option.WithAuthCredentialsFile(option.ServiceAccount, os.Getenv("FCM_CREDENTIALS_FILE"))))
 	fcmClient = exerrors.Must(app.Messaging(ctx))
 	go func() {
 		c := make(chan os.Signal, 1)
@@ -109,6 +108,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
 type PushRequest struct {
 	Token        string `json:"token"`
+	Fid          string `json:"fid"`
 	Owner        string `json:"owner"`
 	Payload      []byte `json:"payload"`
 	HighPriority bool   `json:"high_priority"`
@@ -123,7 +123,9 @@ func (pr *PushRequest) ToFCM() *messaging.Message {
 			RestrictedPackageName: fcmPackageName,
 			Priority:              pr.GetPriority(),
 		},
+		//lint:ignore SA1019 push tokens are still in use
 		Token: pr.Token,
+		Fid:   pr.Fid,
 	}
 }
 
@@ -168,6 +170,8 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Str("message_id", resp).
 			Str("owner", req.Owner).
 			Msg("Sent FCM request")
+		w.Header().Set("Content-Length", strconv.Itoa(len(resp)))
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(resp))
 	}
 }
