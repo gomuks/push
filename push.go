@@ -160,9 +160,12 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Str("installation_id", req.Fid).
 			Str("owner", req.Owner).
 			Msg("Failed to send FCM request")
-		// TODO can errors be checked properly?
-		if err.Error() == "Requested entity was not found." || err.Error() == "SenderId mismatch" {
+		if messaging.IsSenderIDMismatch(err) || messaging.IsUnregistered(err) {
 			w.WriteHeader(http.StatusNotFound)
+		} else if messaging.IsQuotaExceeded(err) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		} else if messaging.IsInvalidArgument(err) {
+			w.WriteHeader(http.StatusBadRequest)
 		} else {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
