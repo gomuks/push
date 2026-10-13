@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -137,24 +138,26 @@ func (pr *PushRequest) GetPriority() string {
 }
 
 const maxPayloadLength = 4000
-const maxContentLength = 4096
+const maxRequestLength = 5 * 1024
 
 func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 	var req PushRequest
 	if r.URL.Path != "/_gomuks/push/fcm" {
 		w.WriteHeader(http.StatusNotFound)
-	} else if r.ContentLength > maxContentLength {
+	} else if r.ContentLength > maxRequestLength {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
-	} else if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	} else if err := json.NewDecoder(io.LimitReader(r.Body, maxRequestLength)).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 	} else if base64.StdEncoding.EncodedLen(len(req.Payload)) > maxPayloadLength {
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
-	} else if len(req.Owner) == 0 || len(req.Owner) > 255 {
+	} else if len(req.Owner) == 0 || len(req.Owner) > 255 || len(req.Token) > 200 || len(req.Fid) > 200 ||
+		(req.Fid != "" && req.Token != "") || (req.Fid == "" && req.Token == "") {
 		w.WriteHeader(http.StatusBadRequest)
 	} else if resp, err := fcmClient.Send(r.Context(), req.ToFCM()); err != nil {
 		hlog.FromRequest(r).
 			Err(err).
 			Str("push_token", req.Token).
+			Str("installation_id", req.Fid).
 			Str("owner", req.Owner).
 			Msg("Failed to send FCM request")
 		// TODO can errors be checked properly?
@@ -167,6 +170,7 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 		hlog.FromRequest(r).
 			Err(err).
 			Str("push_token", req.Token).
+			Str("installation_id", req.Fid).
 			Str("message_id", resp).
 			Str("owner", req.Owner).
 			Msg("Sent FCM request")
