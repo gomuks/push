@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/util/exmaps"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/util/requestlog"
@@ -46,6 +48,7 @@ import (
 )
 
 var fcmPackageName = os.Getenv("FCM_PACKAGE_NAME")
+var fcmPackageNameWhitelist = exmaps.NewSetWithItems(strings.Split(os.Getenv("FCM_PACKAGE_NAME_WHITELIST"), ","))
 var fcmClient *messaging.Client
 
 func main() {
@@ -113,21 +116,29 @@ type PushRequest struct {
 	Owner        string `json:"owner"`
 	Payload      []byte `json:"payload"`
 	HighPriority bool   `json:"high_priority"`
+	AppID        string `json:"app_id,omitempty"`
 }
 
-func (pr *PushRequest) ToFCM() *messaging.Message {
+func (pr *PushRequest) ToFCM() (*messaging.Message, int) {
+	appID := fcmPackageName
+	if pr.AppID != "" {
+		if !fcmPackageNameWhitelist.Has(pr.AppID) {
+			return nil, http.StatusForbidden
+		}
+		appID = pr.AppID
+	}
 	return &messaging.Message{
 		Data: map[string]string{
 			"payload": base64.StdEncoding.EncodeToString(pr.Payload),
 		},
 		Android: &messaging.AndroidConfig{
-			RestrictedPackageName: fcmPackageName,
+			RestrictedPackageName: appID,
 			Priority:              pr.GetPriority(),
 		},
 		//lint:ignore SA1019 push tokens are still in use
 		Token: pr.Token,
 		Fid:   pr.Fid,
-	}
+	}, 0
 }
 
 func (pr *PushRequest) GetPriority() string {
@@ -153,7 +164,9 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 	} else if len(req.Owner) == 0 || len(req.Owner) > 255 || len(req.Token) > 200 || len(req.Fid) > 200 ||
 		(req.Fid != "" && req.Token != "") || (req.Fid == "" && req.Token == "") {
 		w.WriteHeader(http.StatusBadRequest)
-	} else if resp, err := fcmClient.Send(r.Context(), req.ToFCM()); err != nil {
+	} else if payload, stat := req.ToFCM(); stat != 0 {
+		w.WriteHeader(stat)
+	} else if resp, err := fcmClient.Send(r.Context(), payload); err != nil {
 		hlog.FromRequest(r).
 			Err(err).
 			Str("push_token", req.Token).
