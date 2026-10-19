@@ -171,6 +171,7 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Err(err).
 			Str("push_token", req.Token).
 			Str("installation_id", req.Fid).
+			Str("app_id", payload.Android.RestrictedPackageName).
 			Str("owner", req.Owner).
 			Msg("Failed to send FCM request")
 		if messaging.IsSenderIDMismatch(err) || messaging.IsUnregistered(err) {
