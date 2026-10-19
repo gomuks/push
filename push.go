@@ -188,6 +188,7 @@ func handlePushProxy(w http.ResponseWriter, r *http.Request) {
 			Str("push_token", req.Token).
 			Str("installation_id", req.Fid).
 			Str("message_id", resp).
+			Str("app_id", payload.Android.RestrictedPackageName).
 			Str("owner", req.Owner).
 			Msg("Sent FCM request")
 		w.Header().Set("Content-Length", strconv.Itoa(len(resp)))
